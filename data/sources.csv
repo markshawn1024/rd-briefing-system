@@ -1,0 +1,35 @@
+source_id,source_name,source_tier,source_url,source_type,auto_crawl,crawl_method,crawl_status,notes
+f1-official-latest,Formula 1 Official Latest,S,https://www.formula1.com/en/latest,official,true,untested,untested,
+fia-f1-news,FIA F1 News,S,https://www.fia.com/news/tags/f1-245,official,true,untested,untested,
+fia-f2-latest,FIA Formula 2 Latest,S,https://www.fiaformula2.com/Latest,official,true,untested,untested,
+fia-f3-latest,FIA Formula 3 Latest,S,https://www.fiaformula3.com/Latest,official,true,untested,untested,
+f1-academy-latest,F1 Academy Latest,S,https://www.f1academy.com/Latest,official,true,untested,untested,
+reuters-f1,Reuters Formula 1,S,https://www.reuters.com/sports/formula1,wire,true,untested,untested,
+ap-f1,AP Formula One,S,https://apnews.com/hub/formula-one,wire,true,untested,untested,
+mercedes-f1-news,Mercedes-AMG F1 News,S,https://www.mercedesamgf1.com/news,team,false,manual_check,manual_check,Team official site, PR-heavy, low exclusive value for MVP, manual check only.
+ferrari-f1-news,Ferrari Formula 1 News,S,https://www.ferrari.com/en-HK/formula1/news,team,false,manual_check,manual_check,Team official site, PR-heavy, low exclusive value for MVP, manual check only.
+mclaren-f1-news,McLaren F1 News,S,https://www.mclaren.com/racing/news/,team,false,manual_check,manual_check,Team official site, PR-heavy, low exclusive value for MVP, manual check only.
+aston-martin-f1-news,Aston Martin F1 News,S,https://www.astonmartinf1.com/en-GB/news,team,false,manual_check,manual_check,Team official site, PR-heavy, low exclusive value for MVP, manual check only.
+alpine-f1-news,Alpine F1 News,S,https://www.alpinef1.com/news,team,false,manual_check,manual_check,Team official site, PR-heavy, low exclusive value for MVP, manual check only.
+williams-f1-news,Williams F1 News,S,https://www.williamsf1.com/news,team,false,manual_check,manual_check,Team official site, PR-heavy, low exclusive value for MVP, manual check only.
+haas-f1-news,Haas F1 News,S,https://www.haasf1team.com/news,team,false,manual_check,manual_check,Team official site, PR-heavy, low exclusive value for MVP, manual check only.
+cadillac-f1-news,Cadillac F1 Team News,S,https://www.cadillacf1team.com/news,team,false,manual_check,manual_check,Team official site, PR-heavy, low exclusive value for MVP, manual check only.
+bbc-f1,BBC Sport Formula 1,A,https://www.bbc.com/sport/formula1,media,true,untested,untested,
+sky-f1,Sky Sports F1,A,https://www.skysports.com/f1,media,true,untested,untested,
+guardian-f1,The Guardian Formula One,A,https://www.theguardian.com/sport/formulaone,media,true,untested,untested,
+motorsport-f1,Motorsport.com F1 News,A,https://www.motorsport.com/f1/news/,media,true,untested,untested,
+espn-f1,ESPN F1,A,https://www.espn.com/f1/,media,true,untested,untested,
+autosport-f1,Autosport F1,A,https://www.autosport.com/f1/,media,true,untested,untested,
+the-race-f1,The Race Formula 1,A,https://www.the-race.com/category/formula-1/,media,true,untested,untested,
+f1technical,F1Technical.net,A,https://www.f1technical.net/,technical_media,true,untested,untested,
+racecar-eng-f1,Racecar Engineering Formula One,A,https://www.racecar-engineering.com/formulaone/,technical_media,true,untested,untested,
+telegraph-f1,The Telegraph Formula 1,A,https://www.telegraph.co.uk/formula-1/,media,true,untested,untested,
+nyt-athletic-f1,The Athletic Formula 1,A,https://www.nytimes.com/athletic/formula-1/,media,true,untested,untested,
+rn365-f1-news,RacingNews365 F1 News,B+,https://racingnews365.com/f1-news,media,true,untested,untested,
+rn365-tech,RacingNews365 Tech,B+,https://racingnews365.com/tech,technical_media,true,untested,untested,
+planetf1,Planet F1,B+,https://www.planetf1.com/,media,true,untested,untested,
+gpblog-f1,GPBlog Formula 1,B+,https://www.gpblog.com/en/formula-1,media,true,untested,untested,
+gpfans-f1,GPFans F1 News,B+,https://www.gpfans.com/en/f1-news/,media,true,untested,untested,
+crash-f1,Crash.net F1 News,B+,https://www.crash.net/f1/news,media,true,untested,untested,
+speedcafe-f1,Speedcafe F1,B+,https://speedcafe.com/f1/,media,true,untested,untested,
+gp247-f1,Grand Prix 247 Formula 1 News,B+,https://www.grandprix247.com/formula-1-news,media,true,untested,untested,
