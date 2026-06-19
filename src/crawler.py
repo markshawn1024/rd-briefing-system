@@ -383,6 +383,9 @@ def get_title_filter_reason(
             if keyword.lower() in raw_lower:
                 return f"non_f1_category_title:{keyword}"
 
+    if sid == "ap-f1" and not _ap_has_f1_signal(f"{raw_title} {clean_title}", url):
+        return "ap_missing_f1_keyword"
+
     return None
 
 
@@ -426,6 +429,61 @@ def _reuters_url_reason(path: str) -> Optional[str]:
     if len(_path_segments(path)) < 4:
         return "reuters_insufficient_path_depth"
     return None
+
+
+AP_ARTICLE_ID_SUFFIX_RE = re.compile(r"-[a-f0-9]{16,}$", re.I)
+AP_HEX_WORD_RE = re.compile(r"\b[a-f0-9]{16,}\b", re.I)
+
+AP_F1_KEYWORDS = (
+    "formula one",
+    "formula 1",
+    "f1",
+    "grand prix",
+    "ferrari",
+    "mercedes",
+    "red bull",
+    "mclaren",
+    "aston martin",
+    "alpine",
+    "williams",
+    "haas",
+    "cadillac",
+    "verstappen",
+    "hamilton",
+    "leclerc",
+    "norris",
+    "piastri",
+    "russell",
+    "antonelli",
+    "alonso",
+    "sainz",
+)
+
+
+def _ap_match_text(text: str) -> str:
+    return text.lower().replace("-", " ").replace("_", " ")
+
+
+def _ap_url_match_text(url: str) -> str:
+    segments = _path_segments(urlparse(url).path)
+    if not segments:
+        return ""
+    slug = AP_ARTICLE_ID_SUFFIX_RE.sub("", segments[-1])
+    return _ap_match_text(slug)
+
+
+def _ap_title_match_text(title: str) -> str:
+    stripped = AP_HEX_WORD_RE.sub(" ", title.strip())
+    return _ap_match_text(stripped)
+
+
+def _ap_has_f1_signal(title: str, url: str) -> bool:
+    title_text = _ap_title_match_text(title)
+    url_text = _ap_url_match_text(url)
+    for keyword in AP_F1_KEYWORDS:
+        if keyword in title_text or keyword in url_text:
+            return True
+    return False
 
 
 def _ap_url_reason(path: str) -> Optional[str]:
