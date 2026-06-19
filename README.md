@@ -108,8 +108,48 @@ Motorsport.com F1,https://www.motorsport.com/f1/,en,Main F1 section
 | `database.py` | 建表、来源 upsert、文章去重插入 |
 | `main.py` | 串联上述步骤 |
 
+## Manual AI Editorial Workflow
+
+当前项目暂不接 OpenAI API。用户手动将 prompt 上传到 ChatGPT 对话框完成分类，再保存 JSON 并在本地校验。
+
+### 步骤
+
+1. **运行 crawler**
+
+   ```bash
+   python src/main.py
+   ```
+
+2. **生成 ChatGPT prompt**
+
+   ```bash
+   python src/classification_prompt.py
+   ```
+
+3. **上传或复制** `outputs/classification_prompt.txt` 到 ChatGPT 对话框。
+
+4. **要求 ChatGPT 输出严格 JSON**（不要 Markdown 代码块，不要额外说明文字）。
+
+5. **将 ChatGPT 输出保存为** `outputs/classified_articles.json`。
+
+6. **本地校验**
+
+   ```bash
+   python src/validate_classification.py
+   ```
+
+7. **如果校验通过**，再人工编辑日报内容。
+
+### 相关输出文件
+
+| 文件 | 说明 |
+|------|------|
+| `outputs/articles_latest.json` | 爬虫与提取阶段产出的候选文章 |
+| `outputs/classification_prompt.txt` | 供 ChatGPT 使用的分类与聚类 prompt |
+| `outputs/classified_articles.json` | ChatGPT 返回的分类 JSON（手动保存） |
+
 ## 后续阶段（规划）
 
-- AI 分类与摘要
+- 自动 API 分类（当前暂不启用）
 - Web UI / 简报生成
 - 社交媒体与 RSS 扩展
