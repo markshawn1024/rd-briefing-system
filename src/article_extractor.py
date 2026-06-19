@@ -3,15 +3,18 @@
 import json
 import logging
 from typing import Any, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 import trafilatura
 from bs4 import BeautifulSoup
 
+from cleaner import clean_raw_text, normalize_datetime
+
 logger = logging.getLogger(__name__)
 
 FETCH_TIMEOUT = 20
+RAW_TEXT_MAX_CHARS = 8000
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -21,9 +24,13 @@ BROWSER_USER_AGENT = (
 EMPTY_RESULT = {
     "canonical_url": "",
     "extracted_title": "",
+    "published_time_raw": "",
     "published_time": "",
     "summary": "",
     "raw_text": "",
+    "raw_text_length": 0,
+    "raw_text_cleaned": False,
+    "raw_text_truncated": False,
     "extraction_status": "failed",
     "extraction_error": "",
 }
@@ -39,6 +46,21 @@ def _failed_result(error: str) -> dict:
     result = dict(EMPTY_RESULT)
     result["extraction_error"] = _clean_text(error)
     return result
+
+
+def _source_name_from_url(url: str) -> str:
+    host = urlparse(url).netloc.lower()
+    if "formula1.com" in host:
+        return "Formula 1 Official"
+    if "racingnews365.com" in host:
+        return "RacingNews365"
+    if "motorsport.com" in host:
+        return "Motorsport.com"
+    if "autosport.com" in host:
+        return "Autosport"
+    if "theguardian.com" in host:
+        return "The Guardian Formula One"
+    return ""
 
 
 def _fetch_html(url: str) -> tuple[Optional[str], Optional[str]]:
@@ -138,7 +160,7 @@ def _extract_time_datetime(soup: BeautifulSoup) -> str:
     return _clean_text(time_tag.get("datetime", ""))
 
 
-def _extract_published_time(soup: BeautifulSoup) -> str:
+def _extract_published_time_raw(soup: BeautifulSoup) -> str:
     for getter in (
         lambda: _meta_content(soup, property="article:published_time"),
         lambda: _meta_content(soup, name="pubdate"),
@@ -170,7 +192,7 @@ def _extract_raw_text(html: str, page_url: str) -> str:
     except Exception as exc:
         logger.debug("trafilatura failed for %s: %s", page_url, exc)
         return ""
-    return _clean_text(text) if text else ""
+    return text if text else ""
 
 
 def extract_article_details(url: str) -> dict:
@@ -193,12 +215,28 @@ def extract_article_details(url: str) -> dict:
         logger.warning("Article parse failed for %s: %s", page_url, exc)
         return _failed_result(str(exc))
 
+    published_time_raw = _extract_published_time_raw(soup)
+    normalized_time = normalize_datetime(published_time_raw)
+    published_time = normalized_time if normalized_time is not None else published_time_raw
+
+    source_name = _source_name_from_url(page_url)
+    raw_before = _extract_raw_text(html, page_url)
+    raw_text = clean_raw_text(raw_before, source_name=source_name)
+    raw_text_cleaned = bool(raw_before.strip())
+    raw_text_truncated = len(raw_text) > RAW_TEXT_MAX_CHARS
+    if raw_text_truncated:
+        raw_text = raw_text[:RAW_TEXT_MAX_CHARS]
+
     return {
         "canonical_url": _extract_canonical_url(soup, page_url),
         "extracted_title": _extract_title(soup),
-        "published_time": _extract_published_time(soup),
+        "published_time_raw": published_time_raw,
+        "published_time": published_time,
         "summary": _extract_summary(soup),
-        "raw_text": _extract_raw_text(html, page_url),
+        "raw_text": raw_text,
+        "raw_text_length": len(raw_text),
+        "raw_text_cleaned": raw_text_cleaned,
+        "raw_text_truncated": raw_text_truncated,
         "extraction_status": "ok",
         "extraction_error": "",
     }

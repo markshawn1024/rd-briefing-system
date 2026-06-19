@@ -10,8 +10,11 @@ DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "rd_news.db"
 ARTICLE_EXTRA_COLUMNS: dict[str, str] = {
     "canonical_url": "TEXT",
     "published_time": "TEXT",
+    "published_time_raw": "TEXT",
     "summary": "TEXT",
     "raw_text": "TEXT",
+    "raw_text_length": "INTEGER",
+    "raw_text_cleaned": "INTEGER",
     "extraction_status": "TEXT",
     "extraction_error": "TEXT",
 }
@@ -161,8 +164,11 @@ def update_article_extraction(
     title: str,
     canonical_url: str = "",
     published_time: str = "",
+    published_time_raw: str = "",
     summary: str = "",
     raw_text: str = "",
+    raw_text_length: int = 0,
+    raw_text_cleaned: bool = False,
     extraction_status: str = "",
     extraction_error: str = "",
 ) -> None:
@@ -173,8 +179,11 @@ def update_article_extraction(
         SET title = ?,
             canonical_url = ?,
             published_time = ?,
+            published_time_raw = ?,
             summary = ?,
             raw_text = ?,
+            raw_text_length = ?,
+            raw_text_cleaned = ?,
             extraction_status = ?,
             extraction_error = ?
         WHERE url = ?
@@ -183,8 +192,11 @@ def update_article_extraction(
             title,
             canonical_url,
             published_time,
+            published_time_raw,
             summary,
             raw_text,
+            raw_text_length,
+            int(bool(raw_text_cleaned)),
             extraction_status,
             extraction_error,
             url,

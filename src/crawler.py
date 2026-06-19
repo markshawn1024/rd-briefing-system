@@ -16,6 +16,7 @@ from cleaner import (
     normalize_title,
     title_from_slug,
 )
+from article_filters import get_crawl_quality_filter_reason
 
 logger = logging.getLogger(__name__)
 
@@ -385,6 +386,15 @@ def get_title_filter_reason(
 
     if sid == "ap-f1" and not _ap_has_f1_signal(f"{raw_title} {clean_title}", url):
         return "ap_missing_f1_keyword"
+
+    quality_reason = get_crawl_quality_filter_reason(
+        raw_title,
+        url,
+        source_id=sid,
+        clean_title=clean_title,
+    )
+    if quality_reason:
+        return quality_reason
 
     return None
 

@@ -1,8 +1,15 @@
 """URL cleaning and title normalization utilities."""
 
+import logging
 import re
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+from dateutil import parser as date_parser
+
+logger = logging.getLogger(__name__)
 
 TRACKING_PARAMS = frozenset(
     {
@@ -64,6 +71,48 @@ RN365_DATE_SUFFIX_RE = re.compile(
 )
 
 DUPLICATE_JUNK_RE = re.compile(r"Formula\s*\d+\s*d", re.IGNORECASE)
+
+COMPACT_DATE_RE = re.compile(r"^\d{8}$")
+ISO_DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+GENERAL_RAW_TEXT_TRUNCATE_MARKERS = (
+    "Related Articles",
+    "More News",
+    "Latest News",
+    "Most read",
+    "Join the conversation",
+    "Download the F1 calendar",
+    "Subscribe",
+    "Comments",
+    "Next Up",
+    "Share this article",
+    "Recommended",
+    "You may also like",
+)
+
+RN365_RAW_TEXT_TRUNCATE_MARKERS = GENERAL_RAW_TEXT_TRUNCATE_MARKERS + (
+    "Never miss a moment",
+    "Keep up to date with the latest Formula 1 news",
+    "Follow RacingNews365",
+    "In this article",
+    "Also interesting",
+    "Get the latest F1 news from RacingNews365",
+)
+
+FORMULA1_RAW_TEXT_TRUNCATE_MARKERS = (
+    "Related Articles",
+    "Next Up",
+    "More News",
+    "Latest News",
+)
+
+MOTORSPORT_RAW_TEXT_TRUNCATE_MARKERS = (
+    "We want your opinion",
+    "Share Or Save This Story",
+    "Top Comments",
+    "Comments",
+    "Subscribe",
+)
 
 
 def is_tracking_param(key: str) -> bool:
@@ -190,3 +239,188 @@ def title_from_slug(url: str) -> str:
 
     slug_text = slug.replace("-", " ").replace("_", " ")
     return normalize_title(slug_text)
+
+
+def normalize_datetime(value: Optional[str]) -> Optional[str]:
+    """
+    Normalize extracted publish times to ISO-style strings when possible.
+    Returns None for empty input; returns the original string when parsing fails.
+    """
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    if COMPACT_DATE_RE.fullmatch(text):
+        return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+
+    try:
+        dt = date_parser.parse(text)
+    except (ValueError, TypeError, OverflowError):
+        return text
+
+    if ISO_DATE_ONLY_RE.fullmatch(text):
+        return dt.date().isoformat()
+
+    if re.fullmatch(
+        r"\d{1,2}\s+"
+        r"(?:January|February|March|April|May|June|July|August|September|"
+        r"October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+        r"\s+\d{4}",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return dt.date().isoformat()
+
+    if re.fullmatch(
+        r"(?:January|February|March|April|May|June|July|August|September|"
+        r"October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+        r"\s+\d{1,2},\s+\d{4}",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return dt.date().isoformat()
+
+    if text.endswith("Z") and dt.tzinfo is not None:
+        utc_dt = dt.astimezone(timezone.utc)
+        normalized = utc_dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        if "." not in text and "." in normalized:
+            normalized = normalized.split(".")[0] + "Z"
+        return normalized
+
+    return dt.isoformat()
+
+
+def try_parse_published_datetime(value: Optional[str]) -> Optional[datetime]:
+    """Parse a publish time string into datetime; return None when parsing fails."""
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    normalized = normalize_datetime(text)
+    for candidate in (normalized, text):
+        if not candidate:
+            continue
+        try:
+            return date_parser.parse(candidate)
+        except (ValueError, TypeError, OverflowError):
+            continue
+    return None
+
+
+def _truncate_markers_for_source(source_name: Optional[str]) -> tuple[str, ...]:
+    name = (source_name or "").lower()
+    if "racingnews365" in name or "rn365" in name:
+        return RN365_RAW_TEXT_TRUNCATE_MARKERS
+    if "formula 1" in name or "formula1" in name:
+        return FORMULA1_RAW_TEXT_TRUNCATE_MARKERS
+    if "motorsport" in name or "autosport" in name:
+        return GENERAL_RAW_TEXT_TRUNCATE_MARKERS + MOTORSPORT_RAW_TEXT_TRUNCATE_MARKERS
+    return GENERAL_RAW_TEXT_TRUNCATE_MARKERS
+
+
+def _line_should_truncate(line: str, marker: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    marker_lower = marker.lower()
+    if marker_lower not in lowered:
+        return False
+    if lowered == marker_lower:
+        return True
+    if lowered.startswith(marker_lower):
+        return True
+    if len(stripped) <= max(80, len(marker) * 3):
+        return True
+    return False
+
+
+def _truncate_at_markers(text: str, markers: tuple[str, ...]) -> str:
+    lines = text.splitlines()
+    output: list[str] = []
+    for line in lines:
+        if any(_line_should_truncate(line, marker) for marker in markers):
+            break
+        output.append(line)
+    return "\n".join(output)
+
+
+def _dedupe_repeated_lines(lines: list[str], min_repeat: int = 3) -> list[str]:
+    counts = Counter(line.strip() for line in lines if line.strip())
+    seen: set[str] = set()
+    result: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            result.append("")
+            continue
+        if counts[stripped] >= min_repeat:
+            if stripped in seen:
+                continue
+            seen.add(stripped)
+        result.append(line)
+    return result
+
+
+def _remove_consecutive_duplicate_lines(lines: list[str]) -> list[str]:
+    result: list[str] = []
+    previous: Optional[str] = None
+    for line in lines:
+        key = line.strip()
+        if key and key == previous:
+            continue
+        result.append(line)
+        previous = key if key else previous
+    return result
+
+
+def _collapse_blank_lines(text: str) -> str:
+    lines = text.splitlines()
+    collapsed: list[str] = []
+    previous_blank = False
+    for line in lines:
+        is_blank = not line.strip()
+        if is_blank and previous_blank:
+            continue
+        collapsed.append(line.rstrip())
+        previous_blank = is_blank
+    return "\n".join(collapsed).strip()
+
+
+def clean_raw_text(
+    text: Optional[str],
+    source_name: Optional[str] = None,
+) -> str:
+    """
+    Remove obvious site-template noise from extracted article bodies.
+    Never raises; returns an empty string for empty input.
+    """
+    if not text:
+        return ""
+
+    try:
+        working = str(text).replace("\r\n", "\n").replace("\r", "\n")
+        lines = working.splitlines()
+        source_lower = (source_name or "").lower()
+
+        if "motorsport" in source_lower or "autosport" in source_lower:
+            lines = _dedupe_repeated_lines(lines, min_repeat=3)
+            lines = [
+                line
+                for line in lines
+                if not line.strip().startswith("Photos from ")
+            ]
+
+        working = "\n".join(lines)
+        working = _truncate_at_markers(working, _truncate_markers_for_source(source_name))
+        lines = _remove_consecutive_duplicate_lines(working.splitlines())
+        return _collapse_blank_lines("\n".join(lines))
+    except Exception as exc:
+        logger.debug("clean_raw_text failed for source %s: %s", source_name, exc)
+        return " ".join(str(text).split())

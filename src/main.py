@@ -1,5 +1,5 @@
 """
-Racing Dispatch F1 — Phase 1 news source collector (v0.3).
+Racing Dispatch F1 — Phase 1 news source collector (v0.4.1).
 
 Reads sources from data/sources.csv, audits reachability, crawls candidate
 articles, extracts article details, cleans URLs, stores results in SQLite,
@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from article_extractor import extract_article_details
+from article_filters import get_export_filter_reason
 from crawler import crawl_source
 from database import (
     DEFAULT_DB_PATH,
@@ -126,25 +127,32 @@ def _build_article_record(
         "source_tier": source.get("tier"),
         "source_type": source.get("type"),
         "source_url": source_url,
+        "published_time_raw": details.get("published_time_raw", "") if extraction_ok else "",
         "published_time": details.get("published_time", "") if extraction_ok else "",
         "summary": details.get("summary", "") if extraction_ok else "",
         "raw_text": details.get("raw_text", "") if extraction_ok else "",
+        "raw_text_length": details.get("raw_text_length", 0) if extraction_ok else 0,
+        "raw_text_cleaned": details.get("raw_text_cleaned", False) if extraction_ok else False,
+        "raw_text_truncated": details.get("raw_text_truncated", False) if extraction_ok else False,
         "first_seen_at": first_seen_at,
         "is_title_from_slug": candidate.is_title_from_slug,
         "extraction_status": details.get("extraction_status", "failed"),
         "extraction_error": details.get("extraction_error", ""),
+        "filter_reason": "",
+        "source_id": source.get("source_id"),
     }
 
 
 def _extract_new_articles(
     conn,
     pending: list[dict],
-) -> tuple[list[dict], int, int]:
+) -> tuple[list[dict], int, int, int]:
     """Fetch detail pages for newly inserted articles."""
     total = len(pending)
     new_articles: list[dict] = []
     extraction_ok = 0
     extraction_failed = 0
+    export_filtered = 0
 
     for index, item in enumerate(pending, start=1):
         candidate = item["candidate"]
@@ -166,23 +174,31 @@ def _extract_new_articles(
             title=db_title,
             canonical_url=details.get("canonical_url", "") if extraction_ok_flag else "",
             published_time=details.get("published_time", "") if extraction_ok_flag else "",
+            published_time_raw=details.get("published_time_raw", "") if extraction_ok_flag else "",
             summary=details.get("summary", "") if extraction_ok_flag else "",
             raw_text=details.get("raw_text", "") if extraction_ok_flag else "",
+            raw_text_length=details.get("raw_text_length", 0) if extraction_ok_flag else 0,
+            raw_text_cleaned=details.get("raw_text_cleaned", False) if extraction_ok_flag else False,
             extraction_status=details.get("extraction_status", "failed"),
             extraction_error=details.get("extraction_error", ""),
         )
 
-        new_articles.append(
-            _build_article_record(
-                candidate,
-                item["source"],
-                item["source_url"],
-                item["first_seen_at"],
-                details,
-            )
+        record = _build_article_record(
+            candidate,
+            item["source"],
+            item["source_url"],
+            item["first_seen_at"],
+            details,
         )
+        filter_reason = get_export_filter_reason(record)
+        if filter_reason:
+            export_filtered += 1
+            print(f"filtered export: {label} ({filter_reason})")
+            continue
 
-    return new_articles, extraction_ok, extraction_failed
+        new_articles.append(record)
+
+    return new_articles, extraction_ok, extraction_failed, export_filtered
 
 
 def _print_run_summary(
@@ -192,6 +208,8 @@ def _print_run_summary(
     new_candidate_count: int,
     extraction_ok_count: int,
     extraction_failed_count: int,
+    export_filtered_count: int,
+    exported_count: int,
     output_path: Path,
 ) -> None:
     print("\n=== 采集运行摘要 ===")
@@ -201,6 +219,8 @@ def _print_run_summary(
     print(f"本次新增候选文章数量: {new_candidate_count}")
     print(f"详情提取成功数量: {extraction_ok_count}")
     print(f"详情提取失败数量: {extraction_failed_count}")
+    print(f"输出质量过滤跳过数量: {export_filtered_count}")
+    print(f"articles_latest.json 输出数量: {exported_count}")
     print(f"articles_latest.json 输出路径: {output_path}")
 
 
@@ -324,9 +344,11 @@ def run(
             f"skip_reason="
         )
 
-    new_articles, extraction_ok_count, extraction_failed_count = _extract_new_articles(
-        conn,
-        new_pending,
+    new_articles, extraction_ok_count, extraction_failed_count, export_filtered_count = (
+        _extract_new_articles(
+            conn,
+            new_pending,
+        )
     )
 
     export_new_articles(new_articles, output_path)
@@ -340,6 +362,8 @@ def run(
         new_candidate_count=len(new_pending),
         extraction_ok_count=extraction_ok_count,
         extraction_failed_count=extraction_failed_count,
+        export_filtered_count=export_filtered_count,
+        exported_count=len(new_articles),
         output_path=output_path,
     )
 
