@@ -1,25 +1,26 @@
 """
-Racing Dispatch F1 — Phase 1 news source collector.
+Racing Dispatch F1 — Phase 1 news source collector (v0.3).
 
 Reads sources from data/sources.csv, audits reachability, crawls candidate
-articles, cleans URLs, stores results in SQLite, and exports new articles to
-outputs/articles_latest.json.
+articles, extracts article details, cleans URLs, stores results in SQLite,
+and exports new articles to outputs/articles_latest.json.
 """
 
 import csv
 import json
 import logging
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from article_extractor import extract_article_details
 from crawler import crawl_source
 from database import (
     DEFAULT_DB_PATH,
     get_connection,
     init_db,
     insert_article_if_new,
+    update_article_extraction,
     update_source_check,
     upsert_source,
 )
@@ -35,15 +36,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("rd.main")
-
-JUNK_URL_PATTERNS = (
-    re.compile(r"/sport/live/", re.I),
-    re.compile(r"terms[-_]conditions", re.I),
-    re.compile(r"privacy[-_]policy", re.I),
-    re.compile(r"cookie[-_]policy", re.I),
-    re.compile(r"/privacy", re.I),
-    re.compile(r"/terms", re.I),
-)
 
 
 def load_all_sources(csv_path: Path = SOURCES_CSV) -> list[dict]:
@@ -108,39 +100,108 @@ def export_crawl_debug(
     logger.info("Exported crawl debug for %d sources to %s", len(crawl_debug), output_path)
 
 
-def _is_junk_article(article: dict) -> bool:
-    url = article.get("url", "")
-    source_type = (article.get("source_type") or "").lower()
-    if source_type == "team":
-        return True
-    return any(pattern.search(url) for pattern in JUNK_URL_PATTERNS)
+def _progress_label(title: str, clean_title: str, url: str) -> str:
+    return clean_title or title or url
+
+
+def _build_article_record(
+    candidate,
+    source: dict,
+    source_url: str,
+    first_seen_at: str,
+    details: dict,
+) -> dict:
+    extraction_ok = details.get("extraction_status") == "ok"
+    clean_title = (
+        details.get("extracted_title") or candidate.clean_title
+        if extraction_ok
+        else candidate.clean_title
+    )
+    return {
+        "title": candidate.title,
+        "clean_title": clean_title,
+        "url": candidate.url,
+        "canonical_url": details.get("canonical_url", "") if extraction_ok else "",
+        "source_name": source["name"],
+        "source_tier": source.get("tier"),
+        "source_type": source.get("type"),
+        "source_url": source_url,
+        "published_time": details.get("published_time", "") if extraction_ok else "",
+        "summary": details.get("summary", "") if extraction_ok else "",
+        "raw_text": details.get("raw_text", "") if extraction_ok else "",
+        "first_seen_at": first_seen_at,
+        "is_title_from_slug": candidate.is_title_from_slug,
+        "extraction_status": details.get("extraction_status", "failed"),
+        "extraction_error": details.get("extraction_error", ""),
+    }
+
+
+def _extract_new_articles(
+    conn,
+    pending: list[dict],
+) -> tuple[list[dict], int, int]:
+    """Fetch detail pages for newly inserted articles."""
+    total = len(pending)
+    new_articles: list[dict] = []
+    extraction_ok = 0
+    extraction_failed = 0
+
+    for index, item in enumerate(pending, start=1):
+        candidate = item["candidate"]
+        label = _progress_label(candidate.title, candidate.clean_title, candidate.url)
+        print(f"extracting article {index}/{total}: {label}...")
+
+        details = extract_article_details(candidate.url)
+        extraction_ok_flag = details.get("extraction_status") == "ok"
+        if extraction_ok_flag:
+            extraction_ok += 1
+            db_title = details.get("extracted_title") or candidate.clean_title
+        else:
+            extraction_failed += 1
+            db_title = candidate.clean_title
+
+        update_article_extraction(
+            conn,
+            candidate.url,
+            title=db_title,
+            canonical_url=details.get("canonical_url", "") if extraction_ok_flag else "",
+            published_time=details.get("published_time", "") if extraction_ok_flag else "",
+            summary=details.get("summary", "") if extraction_ok_flag else "",
+            raw_text=details.get("raw_text", "") if extraction_ok_flag else "",
+            extraction_status=details.get("extraction_status", "failed"),
+            extraction_error=details.get("extraction_error", ""),
+        )
+
+        new_articles.append(
+            _build_article_record(
+                candidate,
+                item["source"],
+                item["source_url"],
+                item["first_seen_at"],
+                details,
+            )
+        )
+
+    return new_articles, extraction_ok, extraction_failed
 
 
 def _print_run_summary(
     total_sources: int,
     auto_crawl_count: int,
     manual_skip_count: int,
-    new_insert_count: int,
-    articles: list[dict],
+    new_candidate_count: int,
+    extraction_ok_count: int,
+    extraction_failed_count: int,
+    output_path: Path,
 ) -> None:
-    junk_hits = [a for a in articles if _is_junk_article(a)]
-    team_hits = [a for a in articles if (a.get("source_type") or "").lower() == "team"]
-
     print("\n=== 采集运行摘要 ===")
     print(f"总来源数: {total_sources}")
     print(f"auto_crawl=true 来源数: {auto_crawl_count}")
     print(f"manual_check 跳过来源数: {manual_skip_count}")
-    print(f"本次新增入库数量: {new_insert_count}")
-    print(f"articles_latest.json 总数: {len(articles)}")
-    print(f"是否出现 team 类型: {'是' if team_hits else '否'}")
-    print(
-        f"是否出现 terms/privacy/live blog 等垃圾链接: "
-        f"{'是' if junk_hits else '否'}"
-    )
-    if junk_hits:
-        print("垃圾链接样例:")
-        for item in junk_hits[:5]:
-            print(f"  - {item.get('url')}")
+    print(f"本次新增候选文章数量: {new_candidate_count}")
+    print(f"详情提取成功数量: {extraction_ok_count}")
+    print(f"详情提取失败数量: {extraction_failed_count}")
+    print(f"articles_latest.json 输出路径: {output_path}")
 
 
 def run(
@@ -165,7 +226,7 @@ def run(
     conn = get_connection(db_path)
     init_db(conn)
 
-    new_articles: list[dict] = []
+    new_pending: list[dict] = []
     crawl_debug: dict[str, dict] = {}
 
     for source in all_sources:
@@ -244,19 +305,14 @@ def run(
             )
             if is_new:
                 new_insert_count += 1
-                new_articles.append(
+                new_pending.append(
                     {
-                        "title": candidate.title,
-                        "clean_title": candidate.clean_title,
-                        "url": candidate.url,
-                        "source_name": name,
-                        "source_tier": source.get("tier"),
-                        "source_type": source.get("type"),
+                        "candidate": candidate,
+                        "source": source,
                         "source_url": url,
                         "first_seen_at": datetime.now(timezone.utc)
                         .replace(microsecond=0)
                         .isoformat(),
-                        "is_title_from_slug": candidate.is_title_from_slug,
                     }
                 )
 
@@ -268,6 +324,11 @@ def run(
             f"skip_reason="
         )
 
+    new_articles, extraction_ok_count, extraction_failed_count = _extract_new_articles(
+        conn,
+        new_pending,
+    )
+
     export_new_articles(new_articles, output_path)
     export_crawl_debug(crawl_debug)
     conn.close()
@@ -276,8 +337,10 @@ def run(
         total_sources=len(all_sources),
         auto_crawl_count=len(auto_sources),
         manual_skip_count=manual_skip_count,
-        new_insert_count=len(new_articles),
-        articles=new_articles,
+        new_candidate_count=len(new_pending),
+        extraction_ok_count=extraction_ok_count,
+        extraction_failed_count=extraction_failed_count,
+        output_path=output_path,
     )
 
     logger.info(

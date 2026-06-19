@@ -7,6 +7,15 @@ from typing import Any, Optional, Union
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "rd_news.db"
 
+ARTICLE_EXTRA_COLUMNS: dict[str, str] = {
+    "canonical_url": "TEXT",
+    "published_time": "TEXT",
+    "summary": "TEXT",
+    "raw_text": "TEXT",
+    "extraction_status": "TEXT",
+    "extraction_error": "TEXT",
+}
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -48,7 +57,19 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_articles_first_seen ON articles(first_seen_at);
         """
     )
+    _migrate_articles_columns(conn)
     conn.commit()
+
+
+def _migrate_articles_columns(conn: sqlite3.Connection) -> None:
+    """Add missing article columns without breaking existing databases."""
+    existing = {
+        row[1] for row in conn.execute("PRAGMA table_info(articles)").fetchall()
+    }
+    for column, column_type in ARTICLE_EXTRA_COLUMNS.items():
+        if column in existing:
+            continue
+        conn.execute(f"ALTER TABLE articles ADD COLUMN {column} {column_type}")
 
 
 def upsert_source(
@@ -131,6 +152,45 @@ def insert_article_if_new(
     )
     conn.commit()
     return True
+
+
+def update_article_extraction(
+    conn: sqlite3.Connection,
+    url: str,
+    *,
+    title: str,
+    canonical_url: str = "",
+    published_time: str = "",
+    summary: str = "",
+    raw_text: str = "",
+    extraction_status: str = "",
+    extraction_error: str = "",
+) -> None:
+    """Persist detail-page extraction results for an article identified by URL."""
+    conn.execute(
+        """
+        UPDATE articles
+        SET title = ?,
+            canonical_url = ?,
+            published_time = ?,
+            summary = ?,
+            raw_text = ?,
+            extraction_status = ?,
+            extraction_error = ?
+        WHERE url = ?
+        """,
+        (
+            title,
+            canonical_url,
+            published_time,
+            summary,
+            raw_text,
+            extraction_status,
+            extraction_error,
+            url,
+        ),
+    )
+    conn.commit()
 
 
 def get_articles_since(
