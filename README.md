@@ -138,7 +138,20 @@ Motorsport.com F1,https://www.motorsport.com/f1/,en,Main F1 section
    python src/validate_classification.py
    ```
 
-7. **如果校验通过**，再人工编辑日报内容。
+7. **如果校验通过，生成 v0.6 日报草稿**
+
+   ```bash
+   python src/daily_briefing_generator.py
+   ```
+
+   生成：
+
+   - `outputs/daily_briefing_draft.md`
+   - `outputs/daily_briefing_draft.json`
+
+8. **人工润色并复核风险**
+
+   `daily_briefing_draft.md` 是供人工编辑继续润色的日报初稿，不是最终发布稿。涉及 `rumor=true` 或包含 `risk_note_cn` 的内容，发布时必须谨慎处理，不能把传闻或媒体评论写成官方确认。
 
 ### 相关输出文件
 
@@ -147,6 +160,8 @@ Motorsport.com F1,https://www.motorsport.com/f1/,en,Main F1 section
 | `outputs/articles_latest.json` | 爬虫与提取阶段产出的候选文章 |
 | `outputs/classification_prompt.txt` | 供 ChatGPT 使用的分类与聚类 prompt |
 | `outputs/classified_articles.json` | ChatGPT 返回的分类 JSON（手动保存） |
+| `outputs/daily_briefing_draft.md` | 供人工继续润色的中文日报初稿 |
+| `outputs/daily_briefing_draft.json` | 结构化日报草稿，保留入选事件、备选素材和编辑备注 |
 
 ## 后续阶段（规划）
 
